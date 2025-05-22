@@ -123,3 +123,12 @@ For dev purposes, you can use this to catch and view emails instead of sending t
 3. Click "Run Analysis" to analyze the data for anomalies
 4. View analysis results and recommendations
 5. Email notifications are automatically sent for high-severity findings
+
+## Points to improve
+
+1. First, for the ui, it is right now very basic, with only a table and list for anomalies, it can be made better.
+2. Adding an auth part, and users part to it.
+3. A way to upload datasets, also a way to add specific info on them to make it easier for the backend, so a sort of form.
+4. A way to add more than one email for the anomalies and an also way to specify if we get high level or middle level or all anomalies.
+5. Things can be more efficient, the schedule can be done better with redis, and some processes can be made more efficient.
+6. A way to control the scheduling part, so the times and things like that.
