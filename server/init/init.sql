@@ -119,8 +119,8 @@ VALUES
 -- Anomaly 1: Sudden drop in CTR for Retargeting Campaign in Europe
 UPDATE campaigns
 SET
-    impressions = impressions * 1.2,
-    clicks = floor(clicks * 0.4)
+    clicks = 0,
+    spend = 0.01
 WHERE
     campaign_name = 'Retargeting Campaign' AND
     platform = 'Facebook Ads' AND

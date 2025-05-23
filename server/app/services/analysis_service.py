@@ -111,63 +111,71 @@ def detect_anomalies(db: Session, start_date: date, end_date: date):
     """Detect anomalies in campaign metrics."""
     anomalies = []
 
-    # Get all campaigns in date range
+    # Get campaigns grouped by campaign identity
     campaigns = db.query(Campaign).filter(
         Campaign.date.between(start_date, end_date)
-    ).all()
+    ).order_by(Campaign.campaign_name, Campaign.platform, Campaign.region, Campaign.date).all()
 
-    # Group campaigns by name, platform, and region
-    campaign_groups = {}
+    # Simple grouping
+    current_group = []
+    current_key = None
+
     for campaign in campaigns:
         key = (campaign.campaign_name, campaign.platform, campaign.region)
-        if key not in campaign_groups:
-            campaign_groups[key] = []
-        campaign_groups[key].append(campaign)
 
-    # Analyze each campaign group
-    for (name, platform, region), group in campaign_groups.items():
-        # Sort by date
-        group.sort(key=lambda x: x.date)
+        # If we're starting a new group, process the previous one
+        if current_key != key:
+            if current_group:
+                anomalies.extend(find_anomalies_in_group(current_group, current_key))
+            current_group = [campaign]
+            current_key = key
+        else:
+            current_group.append(campaign)
 
-        # Define metrics to analyze
-        metrics = [
-            {"name": "ctr", "getter": lambda c: c.ctr, "format": "percentage"},
-            {"name": "cpc", "getter": lambda c: c.cpc, "format": "currency"},
-            {"name": "cpa", "getter": lambda c: c.cpa, "format": "currency"}
-        ]
+    # Process the last group
+    if current_group:
+        anomalies.extend(find_anomalies_in_group(current_group, current_key))
 
-        # Analyze each metric
-        for metric in metrics:
-            values = [metric["getter"](c) for c in group]
-            mean = np.mean(values[:-1]) if len(values) > 1 else values[0]
-            std = np.std(values[:-1]) if len(values) > 1 else 0
+    return anomalies
 
-            for i, campaign in enumerate(group):
-                # Skip the first day as we need historical data
-                if i == 0:
-                    continue
+def find_anomalies_in_group(campaigns, group_key):
+    """Find anomalies within a single campaign group."""
+    name, platform, region = group_key
+    anomalies = []
 
-                # Check for anomaly
-                if std > 0:
-                    current_value = metric["getter"](campaign)
-                    z_score = abs(current_value - mean) / std
-                    if z_score > 2:  # More than 2 standard deviations
-                        severity = "high" if z_score > 3 else "medium"
+    # Need at least 3 campaigns to detect anomalies
+    if len(campaigns) < 3:
+        return anomalies
 
-                        # Determine if it's a positive or negative anomaly
-                        direction = "increase" if current_value > mean else "decrease"
-                        percent_change = abs(current_value - mean) / mean * 100
+    # Check each campaign against its historical average
+    for i in range(2, len(campaigns)):  # Start from 3rd campaign
+        current = campaigns[i]
+        historical = campaigns[:i]  # All previous campaigns
 
-                        format_suffix = "%" if metric["format"] == "percentage" else ""
+        # Check each metric
+        for metric_name in ['ctr', 'cpc', 'cpa']:
+            current_value = getattr(current, metric_name)
+            historical_values = [getattr(c, metric_name) for c in historical]
 
-                        anomalies.append({
-                            "metric": metric["name"],
-                            "description": f"Unusual {direction} in {metric['name'].upper()} ({percent_change:.1f}%) for {name} on {platform} in {region}",
-                            "severity": severity,
-                            "value": float(current_value),
-                            "expected_value": float(mean),
-                            "date": campaign.date
-                        })
+            # Simple anomaly check
+            avg = sum(historical_values) / len(historical_values)
+
+            # If current value is very different from average (more than 50% difference)
+            if abs(current_value - avg) / avg > 0.5:  # 50% threshold
+                direction = "increase" if current_value > avg else "decrease"
+                percent_change = abs(current_value - avg) / avg * 100
+
+                # Simple severity: >100% change = high, otherwise medium
+                severity = "high" if percent_change > 100 else "medium"
+
+                anomalies.append({
+                    "metric": metric_name,
+                    "description": f"Unusual {direction} in {metric_name.upper()} ({percent_change:.1f}%) for {name} on {platform} in {region}",
+                    "severity": severity,
+                    "value": float(current_value),
+                    "expected_value": float(avg),
+                    "date": current.date
+                })
 
     return anomalies
 
